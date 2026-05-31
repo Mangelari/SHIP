@@ -6,7 +6,8 @@
 #include <Adafruit_BNO055.h>
 #include <ArduinoJson.h>  
 #include <Preferences.h>
-#include <WebServer.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #include "index.h"
 
 #define SSID_casa "MIWIFI_CD65-2,4g"
@@ -37,7 +38,7 @@ IPAddress NMask(255, 255, 255, 0);
 String header;
 String readString; 
 
-WebServer server(80);
+AsyncWebServer server(80);
 WiFiClient fosaclient;
 PubSubClient client(fosaclient);
 
@@ -100,7 +101,7 @@ void cargarDefaults()
 }
 
 void get_data()
-{
+{//falta reset del contador rms para evitar overflow
   sensors_event_t orientationData, linearAccelData;
   bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
   bno.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
@@ -165,6 +166,9 @@ void print_terminal()
                 + " || Accel: " + String(BNO_calibration.accel) + " || Mag: " + String(BNO_calibration.mag));
   Serial.print("\n----------------------------");
 }
+void notFound(AsyncWebServerRequest *request) {
+  request->send(404, "text/plain", "Not found");
+}
 
 void serial_setup()
 {
@@ -210,27 +214,51 @@ void wifi_setup_ap()
   WiFi.softAPConfig(Ip, Ip, NMask);
   Serial.print("ESP32 access point IP address: ");
   Serial.println(WiFi.softAPIP());
+}
+void webserver_setup()
+{
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    request->send(200, "text/html", HTML_CONTENT);
+  });
+  // Send a GET request to <ESP_IP>/get?input1=<inputMessage>
+  server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request)
+  {
+    String inputMessage;
+    String inputParam;
+    
+    if (request->hasParam("pitch")) {
+      BNO_data.pitch_offset = (request->getParam("pitch")->value()).toFloat();
+    }
+    else if (request->hasParam("roll")) {
+      BNO_data.roll_offset = (request->getParam("roll")->value()).toFloat();
+      inputParam = "roll";
+    }
+    else if (request->hasParam("accelH")) {
+      BNO_data.accelH_offset = (request->getParam("accelH")->value()).toFloat();
+      inputParam = "accelH";
+    }
+    else if (request->hasParam("accelV")) {
+      BNO_data.accelV_offset = (request->getParam("accelV")->value()).toFloat();
+      inputParam = "accelV";
+    }
+    else {
+      inputMessage = "No message sent";
+      inputParam = "none";
+    }
+    Serial.println(inputMessage);
+    request->send(200, "text/html", HTML_CONTENT);
+  });
+  server.onNotFound(notFound);
   server.begin();
 }
-void handleRoot() 
-{
-  server.send(200, "text/HTML", HTML_CONTENT);
-}
+
 void setup()
 {
   serial_setup();
   BNO055_setup();
   wifi_setup_sta();
-  server.on("/", handleRoot);
-
-  server.on("/inline", []() {
-    server.send(200, "text/plain", "this works as well");
-  });
-
-
-  server.begin();
-  Serial.println("HTTP server started");
-  delay(5000);
+  webserver_setup();
 }
 
 void loop()
@@ -254,6 +282,6 @@ void loop()
     print_terminal();
     timer_last_print = millis();
   }
-  server.handleClient();
+  
   delay(50);
 }
