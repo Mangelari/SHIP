@@ -2,40 +2,51 @@
 const char HTML_CONTENT[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>Configuracion ESP32</title>
-        <meta name="viewport" content="width=device-width, initial-scale=0.7, maximum-scale=0.7">
-        <meta charset="utf-8">
-        <style>
-            body { font-family: "Courier New"; text-align: center;}
-        </style>
-    </head>
+      <head>
+            <title>Configuracion ESP32</title>
+            <meta name="viewport" content="width=device-width, initial-scale=0.7, maximum-scale=0.7">
+            <meta charset="utf-8">
+            <style>
+                  body { font-family: "Courier New"; text-align: center;}
+            </style>
+      </head>
 
-    <body>
-        <h1>FOSA</h1>
-        <h2>Configuracion ESP32 y BNO-055</h2>
-        <h3>Ajustar offsets</h3>
-        <form action="/get">
-              <label for="pitch">Pitch: </label>
-              <input type="number" name="pitch" id="pitch" required step=".01"/>
-              <input type="submit" value="Confirmar" />
-        </form>
-        <form action="/get">
-              <label for="roll">Roll: </label>
-              <input type="number" name="roll" id="roll" required step=".01"/>
-              <input type="submit" value="Confirmar" />
-        </form>
-        <form action="/get">
-              <label for="accelH">Acceleracion Horizontal: </label>
-              <input type="number" name="accelH" id="accelH" required step=".01"/>
-              <input type="submit" value="Confirmar" />
-        </form>
-        <form action="/get">
-              <label for="accelV">Acceleracion Vertical: </label>
-              <input type="number" name="accelV" id="accelV" required step=".01"/>
-              <input type="submit" value="Confirmar" />
-        </form>
+      <body>
+            <h1>FOSA</h1>
+            <h2>Configuracion ESP32 y BNO-055</h2>
+            <h3>Ajustar offsets BNO-055</h3>
+            <form action="/get">
+                  <label for="pitch">Pitch: </label>
+                  <input type="number" name="pitch" id="pitch" required step=".01"/>
+                  <input type="submit" value="Confirmar" />
+            </form>
+            <form action="/get">
+                  <label for="roll">Roll: </label>
+                  <input type="number" name="roll" id="roll" required step=".01"/>
+                  <input type="submit" value="Confirmar" />
+            </form>
+            <form action="/get">
+                  <label for="accelH">Acceleracion Horizontal: </label>
+                  <input type="number" name="accelH" id="accelH" required step=".01"/>
+                  <input type="submit" value="Confirmar" />
+            </form>
+            <form action="/get">
+                  <label for="accelV">Acceleracion Vertical: </label>
+                  <input type="number" name="accelV" id="accelV" required step=".01"/>
+                  <input type="submit" value="Confirmar" />
+            </form>
+            <h3>Ajustar parametros ESP32</h3>
+            <form action="/get">
+                 <select name="settings" id="settings">
+                        <option value="ip">IP</option>
+                        <option value="gw">Gateway</option>
+                        <option value="sub">Subnet Mask</option>
+                  </select>
+                  <input type="text" name="param" id="param"/>
+                  <input type="submit" value="Confirmar" />
+
+            </form>
             
-            
-    </body>
+      </body>
+</html>
 )rawliteral";

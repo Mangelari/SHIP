@@ -8,6 +8,8 @@
 #include <Preferences.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <Ethernet.h>      
+#include <ModbusEthernet.h>
 #include "index.h"
 
 #define SSID_casa "MIWIFI_CD65-2,4g"
@@ -28,9 +30,9 @@ unsigned long timer_calibration = 5000;
 //Lectura de datos cada: 50ms
 unsigned long timer_last_data = 0;
 unsigned long timer_data = 50;
-//Escritura en terminal cada: 1s
+//Escritura en terminal cada: 2s
 unsigned long timer_last_print = 0;
-unsigned long timer_print = 5000;
+unsigned long timer_print = 2000;
 
 IPAddress Ip(192, 168, 1, 222);
 IPAddress NMask(255, 255, 255, 0);
@@ -79,7 +81,7 @@ struct Settings
 
 } settings;
 
-void cargarDefaults() 
+void cargar_default_settings() 
 {
   strcpy(settings.ip, "192.168.95.11");
   strcpy(settings.gw, "192.168.95.1");
@@ -91,7 +93,7 @@ void cargarDefaults()
   settings.udp_en = false;
   strcpy(settings.udp_ip, "192.168.95.100");
   settings.udp_port = 1234;
-  settings.udp_interval = 5;
+  settings.udp_interval = 250;
   settings.mqtt_en = true;
   strcpy(settings.mqtt_host, "192.168.1.141");
   settings.mqtt_port = 1883;
@@ -143,6 +145,10 @@ void send_data_mqtt()
 {
   
 }
+void send_data_modbus_udp()
+{
+  
+}
 void get_calibration()
 {
   bno.getCalibration(&BNO_calibration.sys, &BNO_calibration.gyro, &BNO_calibration.accel, &BNO_calibration.mag);
@@ -165,8 +171,13 @@ void print_terminal()
   Serial.print("\nSys: " + String(BNO_calibration.sys) + " || Gyro: " + String(BNO_calibration.gyro)
                 + " || Accel: " + String(BNO_calibration.accel) + " || Mag: " + String(BNO_calibration.mag));
   Serial.print("\n----------------------------");
+  Serial.print("\n----------SETTINGS----------");
+
+  Serial.print("\n----------------------------");
 }
-void notFound(AsyncWebServerRequest *request) {
+
+void notFound(AsyncWebServerRequest *request) 
+{
   request->send(404, "text/plain", "Not found");
 }
 
@@ -188,6 +199,12 @@ void BNO055_setup()
   }
   
 }
+void nvmemory_setup()
+{
+  preferences.begin("app", true);
+  if (preferences.getBytes("set", &settings, sizeof(Settings)) == 0) cargar_default_settings();
+  preferences.end();
+}
 void wifi_setup_sta()
 {
   WiFi.mode(WIFI_STA);   
@@ -202,7 +219,6 @@ void wifi_setup_sta()
   Serial.println("\nConnected to the WiFi network");
   Serial.print("Local ESP32 IP: ");
   Serial.println(WiFi.localIP());
-  delay(1000);
 }
 
 void wifi_setup_ap()
@@ -221,32 +237,39 @@ void webserver_setup()
   {
     request->send(200, "text/html", HTML_CONTENT);
   });
-  // Send a GET request to <ESP_IP>/get?input1=<inputMessage>
   server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request)
-  {
-    String inputMessage;
-    String inputParam;
-    
-    if (request->hasParam("pitch")) {
+  { 
+    if (request->hasParam("pitch")) 
+    {
       BNO_data.pitch_offset = (request->getParam("pitch")->value()).toFloat();
     }
-    else if (request->hasParam("roll")) {
+    else if (request->hasParam("roll")) 
+    {
       BNO_data.roll_offset = (request->getParam("roll")->value()).toFloat();
-      inputParam = "roll";
     }
-    else if (request->hasParam("accelH")) {
+    else if (request->hasParam("accelH")) 
+    {
       BNO_data.accelH_offset = (request->getParam("accelH")->value()).toFloat();
-      inputParam = "accelH";
     }
-    else if (request->hasParam("accelV")) {
+    else if (request->hasParam("accelV")) 
+    {
       BNO_data.accelV_offset = (request->getParam("accelV")->value()).toFloat();
-      inputParam = "accelV";
     }
-    else {
-      inputMessage = "No message sent";
-      inputParam = "none";
+    else if (request->hasParam("settings")) 
+    {
+      if (request->getParam("settings")->value() == "ip")
+      {
+        strcpy(settings.ip, request->getParam("param")->value().c_str());
+      }
+      else if (request->getParam("settings")->value() == "gw")
+      {
+        strcpy(settings.gw, request->getParam("param")->value().c_str());
+      }
+      else if (request->getParam("settings")->value() == "sub")
+      {
+        strcpy(settings.sub, request->getParam("param")->value().c_str());
+      }
     }
-    Serial.println(inputMessage);
     request->send(200, "text/html", HTML_CONTENT);
   });
   server.onNotFound(notFound);
@@ -259,6 +282,7 @@ void setup()
   BNO055_setup();
   wifi_setup_sta();
   webserver_setup();
+  delay(5000);
 }
 
 void loop()
