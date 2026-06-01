@@ -9,7 +9,7 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <Ethernet.h>      
-#include <ModbusEthernet.h>
+#include <ModbusIP_ESP8266.h>
 #include "index.h"
 
 #define SSID_casa "MIWIFI_CD65-2,4g"
@@ -27,25 +27,24 @@ unsigned long accelV_counter = 0;
 //Lectura de calibración cada: 5s
 unsigned long timer_last_calibration = 0;
 unsigned long timer_calibration = 5000;
-//Lectura de datos cada: 50ms
-unsigned long timer_last_data = 0;
-unsigned long timer_data = 50;
+
 //Escritura en terminal cada: 2s
 unsigned long timer_last_print = 0;
 unsigned long timer_print = 2000;
 
-IPAddress Ip(192, 168, 1, 222);
-IPAddress NMask(255, 255, 255, 0);
 
-String header;
-String readString; 
+unsigned long timer_pico = 0;
+unsigned long timer_mb_tcp = 0;
+unsigned long timer_bno055 = 0;
 
+
+ModbusIP mb;
 AsyncWebServer server(80);
 WiFiClient fosaclient;
 PubSubClient client(fosaclient);
-
 Preferences preferences;
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x29, &Wire);
+
 
 
 //Datos de interes 
@@ -72,34 +71,23 @@ struct Configuration
 //Datos de comunicacion
 struct Settings 
 {
-  char ip[16]; char gw[16]; char sub[16];
-  char web_user[16]; char web_pass[16];
-  bool mb_en; int mb_port; bool udp_en;
-  char udp_ip[16]; int udp_port; int udp_interval;
-  bool mqtt_en; char mqtt_host[16]; int mqtt_port;
-  char mqtt_user[16]; char mqtt_pass[16]; int mqtt_interval;
-
+  IPAddress IP, GW, SUB;
+  int mb_tcp_samplerate, bno055_samplerate, mqtt_samplerate;
+  int mb_tcp_port, mqtt_port;
+  bool mb_tcp_en, mqtt_en;
 } settings;
 
 void cargar_default_settings() 
 {
-  strcpy(settings.ip, "192.168.95.11");
-  strcpy(settings.gw, "192.168.95.1");
-  strcpy(settings.sub, "255.255.255.0");
-  strcpy(settings.web_user, "admin");
-  strcpy(settings.web_pass, "admin");
-  settings.mb_en = true;
-  settings.mb_port = 502;
-  settings.udp_en = false;
-  strcpy(settings.udp_ip, "192.168.95.100");
-  settings.udp_port = 1234;
-  settings.udp_interval = 250;
+  settings.IP = IPAddress(192, 168, 1, 222);
+  settings.GW = IPAddress(192, 168, 1, 222);
+  settings.SUB = IPAddress(255, 255, 255, 0);
+  settings.bno055_samplerate = 25;
+  settings.mb_tcp_samplerate = 250;
+  settings.mb_tcp_en = true;
   settings.mqtt_en = true;
-  strcpy(settings.mqtt_host, "192.168.1.141");
+  settings.mb_tcp_port = 502;
   settings.mqtt_port = 1883;
-  strcpy(settings.mqtt_user, "admin");
-  strcpy(settings.mqtt_pass, "admin");
-  settings.mqtt_interval = 5;
 }
 
 void get_data()
@@ -143,12 +131,36 @@ void get_data()
 
 void send_data_mqtt()
 {
-  
+  //
 }
-void send_data_modbus_udp()
+void send_float(uint16_t direccion, float valor) {
+    union 
+    {
+      float f;
+      uint16_t regs[2];
+    } conversor;
+
+    conversor.f = valor;
+   
+    mb.Hreg(direccion, conversor.regs[0]);
+    mb.Hreg(direccion + 1, conversor.regs[1]);
+}
+void send_data_modbus_tcp()
 {
-  
+  send_float(0, BNO_data.pitch_actual);
+  send_float(2, BNO_data.roll_actual);
+  send_float(4, BNO_data.accelH_actual);
+  send_float(6, BNO_data.accelV_actual);
+  send_float(8, BNO_data.pitch_pico);
+  send_float(10, BNO_data.roll_pico);
+  send_float(12, BNO_data.accelH_pico);
+  send_float(14, BNO_data.accelV_pico);
+  send_float(16, BNO_data.pitch_rms);
+  send_float(18, BNO_data.roll_rms);
+  send_float(20, BNO_data.accelH_rms);
+  send_float(22, BNO_data.accelV_rms);
 }
+
 void get_calibration()
 {
   bno.getCalibration(&BNO_calibration.sys, &BNO_calibration.gyro, &BNO_calibration.accel, &BNO_calibration.mag);
@@ -166,13 +178,12 @@ void print_terminal()
   Serial.print("\n[RMS]     ");
   Serial.print("Pitch: " + String(BNO_data.pitch_rms) + " || Roll: " + String(BNO_data.roll_rms)
                 + " || AccelH: " + String(BNO_data.accelH_rms) + " || AccelV: " + String(BNO_data.accelV_rms));
-  Serial.print("\n----------------------------");
   Serial.print("\n--------CALIBRACION---------");
   Serial.print("\nSys: " + String(BNO_calibration.sys) + " || Gyro: " + String(BNO_calibration.gyro)
                 + " || Accel: " + String(BNO_calibration.accel) + " || Mag: " + String(BNO_calibration.mag));
-  Serial.print("\n----------------------------");
+  Serial.print("\n--------SAMPLE RATES--------");
+  Serial.print("\nBNO-055: " + String(settings.bno055_samplerate) + "ms || Modbus TCP: " + String(settings.mb_tcp_samplerate) + "ms");
   Serial.print("\n----------SETTINGS----------");
-
   Serial.print("\n----------------------------");
 }
 
@@ -187,6 +198,12 @@ void serial_setup()
   while (!Serial) delay(10);
 }
 
+void modbus_tcp_setup()
+{
+  mb.server();
+  mb.addHreg(0, 0, 32);
+  
+}
 void BNO055_setup()
 {
   if(!bno.begin())
@@ -201,9 +218,7 @@ void BNO055_setup()
 }
 void nvmemory_setup()
 {
-  preferences.begin("app", true);
-  if (preferences.getBytes("set", &settings, sizeof(Settings)) == 0) cargar_default_settings();
-  preferences.end();
+  cargar_default_settings();
 }
 void wifi_setup_sta()
 {
@@ -215,7 +230,7 @@ void wifi_setup_sta()
     Serial.print(".");
     delay(50);
   }
-  WiFi.config(Ip, Ip, NMask);
+  WiFi.config(settings.IP, settings.GW, settings.SUB);
   Serial.println("\nConnected to the WiFi network");
   Serial.print("Local ESP32 IP: ");
   Serial.println(WiFi.localIP());
@@ -227,10 +242,11 @@ void wifi_setup_ap()
   WiFi.softAP("ESP32||BNO-055", NULL);
   Serial.println("\nSetting Wifi access point");
   
-  WiFi.softAPConfig(Ip, Ip, NMask);
+  WiFi.softAPConfig(settings.IP, settings.GW, settings.SUB);
   Serial.print("ESP32 access point IP address: ");
   Serial.println(WiFi.softAPIP());
 }
+
 void webserver_setup()
 {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -259,15 +275,23 @@ void webserver_setup()
     {
       if (request->getParam("settings")->value() == "ip")
       {
-        strcpy(settings.ip, request->getParam("param")->value().c_str());
+        settings.IP.fromString(request->getParam("param")->value());
       }
       else if (request->getParam("settings")->value() == "gw")
       {
-        strcpy(settings.gw, request->getParam("param")->value().c_str());
+        settings.GW.fromString(request->getParam("param")->value());
       }
       else if (request->getParam("settings")->value() == "sub")
       {
-        strcpy(settings.sub, request->getParam("param")->value().c_str());
+        settings.SUB.fromString(request->getParam("param")->value());
+      }
+      else if (request->getParam("settings")->value() == "bno_samplerate")
+      {
+        settings.bno055_samplerate = (request->getParam("param")->value()).toInt();
+      }
+      else if (request->getParam("settings")->value() == "mb_tcp_samplerate")
+      {
+        settings.mb_tcp_samplerate = (request->getParam("param")->value()).toInt();
       }
     }
     request->send(200, "text/html", HTML_CONTENT);
@@ -279,26 +303,27 @@ void webserver_setup()
 void setup()
 {
   serial_setup();
+  nvmemory_setup();
   BNO055_setup();
   wifi_setup_sta();
   webserver_setup();
+  modbus_tcp_setup();
   delay(5000);
 }
 
 void loop()
 {
-  
-
+  mb.task();
   if ((millis() - timer_last_calibration) > timer_calibration) 
   {
     get_calibration();
     timer_last_calibration = millis();
   }
 
-  if ((millis() - timer_last_data) > timer_data) 
+  if ((millis() - timer_bno055) > settings.bno055_samplerate) 
   {
     get_data();
-    timer_last_data = millis();
+    timer_bno055 = millis();
   }
 
   if ((millis() - timer_last_print) > timer_print) 
@@ -306,6 +331,18 @@ void loop()
     print_terminal();
     timer_last_print = millis();
   }
-  
-  delay(50);
+  if ((millis() - timer_mb_tcp) > settings.mb_tcp_samplerate) 
+  {
+    send_data_modbus_tcp();
+    timer_mb_tcp = millis();
+  }
+  if ((millis() - timer_pico) > settings.mb_tcp_samplerate*2) 
+  {
+    BNO_data.pitch_pico = BNO_data.pitch_actual;
+    BNO_data.roll_pico = BNO_data.roll_actual;
+    BNO_data.accelH_pico = BNO_data.accelH_actual;
+    BNO_data.accelV_pico = BNO_data.accelV_actual;
+    timer_pico = millis();
+  }
+  delay(10);
 }

@@ -41,11 +41,15 @@ const char HTML_CONTENT[] PROGMEM = R"rawliteral(
                         <option value="ip">IP</option>
                         <option value="gw">Gateway</option>
                         <option value="sub">Subnet Mask</option>
+                        <option value="bno_samplerate">BNO-055 Samplerate</option>
+                        <option value="mb_tcp_samplerate">Modbus TCP Samplerate</option>
                   </select>
                   <input type="text" name="param" id="param"/>
                   <input type="submit" value="Confirmar" />
-
             </form>
+            <h3>Memoria no volátil ESP32 [WIP]</h3>
+            <button action="/get" type="button">Guardar Configuración</button>
+            <button action="/get" type="button">Cargar Configuración</button>
             
       </body>
 </html>
