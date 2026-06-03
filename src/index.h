@@ -43,6 +43,7 @@ const char HTML_CONTENT[] PROGMEM = R"rawliteral(
                         <option value="sub">Subnet Mask</option>
                         <option value="bno_samplerate">BNO-055 Samplerate</option>
                         <option value="mb_tcp_samplerate">Modbus TCP Samplerate</option>
+                        <option value="mqtt_samplerate">MQTT Samplerate</option>
                   </select>
                   <input type="text" name="param" id="param"/>
                   <input type="submit" value="Confirmar" />

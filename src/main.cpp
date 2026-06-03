@@ -36,6 +36,7 @@ unsigned long timer_print = 2000;
 unsigned long timer_pico = 0;
 unsigned long timer_mb_tcp = 0;
 unsigned long timer_bno055 = 0;
+unsigned long timer_mqtt = 0;
 
 
 ModbusIP mb;
@@ -72,22 +73,35 @@ struct Configuration
 struct Settings 
 {
   IPAddress IP, GW, SUB;
+  char* mqtt_server;
   int mb_tcp_samplerate, bno055_samplerate, mqtt_samplerate;
   int mb_tcp_port, mqtt_port;
   bool mb_tcp_en, mqtt_en;
 } settings;
 
-void cargar_default_settings() 
+void load_default_settings() 
 {
   settings.IP = IPAddress(192, 168, 1, 222);
   settings.GW = IPAddress(192, 168, 1, 222);
   settings.SUB = IPAddress(255, 255, 255, 0);
+  settings.mqtt_server = "192.168.1.142";
   settings.bno055_samplerate = 25;
   settings.mb_tcp_samplerate = 250;
+  settings.mqtt_samplerate = 1000;
   settings.mb_tcp_en = true;
   settings.mqtt_en = true;
   settings.mb_tcp_port = 502;
   settings.mqtt_port = 1883;
+}
+
+void load_settings() 
+{
+
+}
+
+void save_settings() 
+{
+
 }
 
 void get_data()
@@ -129,9 +143,51 @@ void get_data()
   BNO_data.accelV_rms += accelV_abs_value / accelV_counter;
 }
 
+void callback(char* topic, byte* payload, unsigned int length) 
+{
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i=0;i<length;i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+}
+
 void send_data_mqtt()
 {
-  //
+  JsonDocument doc_actual;
+  doc_actual["pitch_actual"] = BNO_data.pitch_actual;
+  doc_actual["roll_actual"] = BNO_data.roll_actual;
+  doc_actual["accelH_actual"] = BNO_data.accelH_actual;
+  doc_actual["accelV_actual"] = BNO_data.accelV_actual;
+  JsonDocument doc_pico;
+  doc_pico["pitch_pico"] = BNO_data.pitch_pico;
+  doc_pico["roll_pico"] = BNO_data.roll_pico;
+  doc_pico["accelH_pico"] = BNO_data.accelH_pico;
+  doc_pico["accelV_pico"] = BNO_data.accelV_pico;
+  JsonDocument doc_rms;
+  doc_rms["pitch_rms"] = BNO_data.pitch_rms;
+  doc_rms["roll_rms"] = BNO_data.roll_rms;
+  doc_rms["accelH_rms"] = BNO_data.accelH_rms;
+  doc_rms["accelV_rms"] = BNO_data.accelV_rms;
+  JsonDocument doc_calibration;
+  doc_calibration["sys"] = BNO_calibration.sys;
+  doc_calibration["gyro"] = BNO_calibration.gyro;
+  doc_calibration["accel"] = BNO_calibration.accel;
+  doc_calibration["mag"] = BNO_calibration.mag;
+  char doc_actual_buffer[256];
+  serializeJson(doc_actual , doc_actual_buffer);
+  client.publish("BNO055/actual", doc_actual_buffer);
+  char doc_pico_buffer[256];
+  serializeJson(doc_pico , doc_pico_buffer);
+  client.publish("BNO055/pico", doc_pico_buffer);
+  char doc_rms_buffer[256];
+  serializeJson(doc_rms , doc_rms_buffer);
+  client.publish("BNO055/rms", doc_rms_buffer);
+  char doc_calibration_buffer[256];
+  serializeJson(doc_calibration , doc_calibration_buffer);
+  client.publish("BNO055/calibration", doc_calibration_buffer);
 }
 void send_float(uint16_t direccion, float valor) {
     union 
@@ -204,6 +260,35 @@ void modbus_tcp_setup()
   mb.addHreg(0, 0, 32);
   
 }
+void reconnect() 
+{
+  while (!client.connected()) 
+  {
+    Serial.print("Connecting to MQTT...");
+    if (client.connect("ESP32Client")) 
+    { 
+      Serial.println("Connected!");
+
+    }else 
+    {
+      Serial.print("Failed, rc=");
+      Serial.print(client.state()); 
+      Serial.println(" retrying in 2 seconds");
+      delay(2000); 
+    }
+  }
+}
+void mqtt_setup()
+{
+  Serial.println("\nInitializing MQTT protocol");
+  client.setServer(settings.mqtt_server, settings.mqtt_port);
+  client.setCallback(callback);
+  if (!client.connected()) 
+  {
+    reconnect();
+  }
+}
+
 void BNO055_setup()
 {
   if(!bno.begin())
@@ -218,7 +303,7 @@ void BNO055_setup()
 }
 void nvmemory_setup()
 {
-  cargar_default_settings();
+  load_default_settings();
 }
 void wifi_setup_sta()
 {
@@ -293,6 +378,10 @@ void webserver_setup()
       {
         settings.mb_tcp_samplerate = (request->getParam("param")->value()).toInt();
       }
+      else if (request->getParam("settings")->value() == "mqtt_samplerate")
+      {
+        settings.mqtt_samplerate = (request->getParam("param")->value()).toInt();
+      }
     }
     request->send(200, "text/html", HTML_CONTENT);
   });
@@ -308,12 +397,15 @@ void setup()
   wifi_setup_sta();
   webserver_setup();
   modbus_tcp_setup();
+  mqtt_setup();
   delay(5000);
 }
 
 void loop()
 {
   mb.task();
+  client.loop();
+
   if ((millis() - timer_last_calibration) > timer_calibration) 
   {
     get_calibration();
@@ -336,7 +428,13 @@ void loop()
     send_data_modbus_tcp();
     timer_mb_tcp = millis();
   }
-  if ((millis() - timer_pico) > settings.mb_tcp_samplerate*2) 
+  if ((millis() - timer_mqtt) > settings.mqtt_samplerate) 
+  {
+    reconnect();
+    timer_mqtt = millis();
+    send_data_mqtt();
+  }
+  if ((millis() - timer_pico) > settings.mqtt_samplerate*2) 
   {
     BNO_data.pitch_pico = BNO_data.pitch_actual;
     BNO_data.roll_pico = BNO_data.roll_actual;
