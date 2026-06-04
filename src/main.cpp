@@ -15,6 +15,7 @@
 
 #define SSID_casa "MIWIFI_CD65-2,4g"
 #define PASSWORD_casa "ZTT9QJG6"
+#define API_DB "qwnsAEun-9u8aHaiPBWL8xFaULYeECKWYag1iMPJo1yy_p7sAtzWhI3L3jKdhpq6cD3yuVmh2HTesmNhpBIVPQ=="
 
 const char* ssid = SSID_casa;
 const char* password = PASSWORD_casa;
