@@ -87,7 +87,7 @@ void load_default_settings()
   settings.IP = IPAddress(192, 168, 1, 222);
   settings.GW = IPAddress(192, 168, 1, 222);
   settings.SUB = IPAddress(255, 255, 255, 0);
-  settings.mqtt_server = "192.168.1.142";
+  settings.mqtt_server = "192.168.1.223";
   settings.bno055_samplerate = 25;
   settings.mb_tcp_samplerate = 250;
   settings.mqtt_samplerate = 1000;
@@ -430,7 +430,7 @@ void setup()
   serial_setup();
   nvmemory_setup();
   BNO055_setup();
-  wifi_setup_sta();
+  wifi_setup_ap();
   webserver_setup();
   modbus_tcp_setup();
   mqtt_setup();
