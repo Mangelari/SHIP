@@ -10,6 +10,7 @@
 #include <ESPAsyncWebServer.h>
 #include <Ethernet.h>      
 #include <ModbusIP_ESP8266.h>
+#include <math.h>
 #include "index.h"
 
 #define SSID_casa "MIWIFI_CD65-2,4g"
@@ -54,7 +55,8 @@ struct Data
   float pitch_actual, pitch_pico, pitch_rms, pitch_offset,
   roll_actual, roll_pico, roll_rms, roll_offset,
   accelH_actual, accelH_pico, accelH_rms, accelH_offset,
-  accelV_actual, accelV_pico, accelV_rms, accelV_offset;
+  accelV_actual, accelV_pico, accelV_rms, accelV_offset,
+  msi, msdv;
 } BNO_data;
 
 //Calibracion del sensor 0-3 (3 = Fully calibrated)
@@ -66,7 +68,7 @@ struct Calibration
 //Configuracion de la calibracion, se pierde al apagar el BNO
 struct Configuration
 {
-  adafruit_bno055_offsets_t e;
+  adafruit_bno055_offsets_t calibration;
 
 } config;
 //Datos de comunicacion
@@ -94,14 +96,42 @@ void load_default_settings()
   settings.mqtt_port = 1883;
 }
 
-void load_settings() 
+void save_settings_nvmemory()
 {
-
+  preferences.begin("settings", false);
+  preferences.putBytes("IP", &settings.IP, sizeof(settings.IP));
+  preferences.putBytes("GW", &settings.GW, sizeof(settings.GW));
+  preferences.putBytes("SUB", &settings.SUB, sizeof(settings.SUB));
+  preferences.putBytes("BNO055_SAMPLERATE", &settings.bno055_samplerate, sizeof(settings.bno055_samplerate));
+  preferences.putBytes("MB_TCP_SAMPLERATE", &settings.mb_tcp_samplerate, sizeof(settings.mb_tcp_samplerate));
+  preferences.putBytes("MQTT_SAMPLERATE", &settings.mqtt_samplerate, sizeof(settings.mqtt_samplerate));
+  preferences.end();
+}
+void load_settings_nvmemory()
+{
+  preferences.begin("settings", false);
+  preferences.getBytes("IP", &settings.IP, sizeof(settings.IP));
+  preferences.getBytes("GW", &settings.GW, sizeof(settings.GW));
+  preferences.getBytes("SUB", &settings.SUB, sizeof(settings.SUB));
+  preferences.getBytes("BNO055_SAMPLERATE", &settings.bno055_samplerate, sizeof(settings.bno055_samplerate));
+  preferences.getBytes("MB_TCP_SAMPLERATE", &settings.mb_tcp_samplerate, sizeof(settings.mb_tcp_samplerate));
+  preferences.getBytes("MQTT_SAMPLERATE", &settings.mqtt_samplerate, sizeof(settings.mqtt_samplerate));
+  preferences.end();
+}
+void save_calibration_nvmemory()
+{
+  bno.getSensorOffsets(config.calibration);
+  preferences.begin("calibration", false);
+  preferences.putBytes("BNO055_CALIBRATION", &config.calibration, sizeof(config.calibration));
+  preferences.end();
 }
 
-void save_settings() 
+void load_calibration_nvmemory()
 {
-
+  preferences.begin("calibration", true);
+  preferences.getBytes("BNO055_CALIBRATION", &config.calibration, sizeof(config.calibration));
+  bno.setSensorOffsets(config.calibration);
+  preferences.end();
 }
 
 void get_data()
@@ -141,6 +171,36 @@ void get_data()
   BNO_data.accelV_pico = max(accelV_abs_value, BNO_data.accelV_pico);
   BNO_data.accelV_rms -= BNO_data.accelV_rms / accelV_counter;
   BNO_data.accelV_rms += accelV_abs_value / accelV_counter;
+  //BNO_data.msi = 100 *(0.5 + abs()  (BNO_data.accelV_rms / 9.8) * abs(((2*M_PI)/settings.bno055_samplerate)));
+  BNO_data.msdv = BNO_data.accelV_rms * ((accelV_counter * settings.bno055_samplerate) / 1000);
+}
+
+void get_calibration()
+{
+  bno.getCalibration(&BNO_calibration.sys, &BNO_calibration.gyro, &BNO_calibration.accel, &BNO_calibration.mag);
+}
+
+void print_terminal()
+{
+  Serial.print("\n------------DATA------------");
+  Serial.print("\n[ACTUAL]  ");
+  Serial.print("Pitch: " + String(BNO_data.pitch_actual) + " || Roll: " + String(BNO_data.roll_actual)
+                + " || AccelH: " + String(BNO_data.accelH_actual) + " || AccelV: " + String(BNO_data.accelV_actual));
+  Serial.print("\n[PICO]    ");
+  Serial.print("Pitch: " + String(BNO_data.pitch_pico) + " || Roll: " + String(BNO_data.roll_pico)
+                + " || AccelH: " + String(BNO_data.accelH_pico) + " || AccelV: " + String(BNO_data.accelV_pico));
+  Serial.print("\n[RMS]     ");
+  Serial.print("Pitch: " + String(BNO_data.pitch_rms) + " || Roll: " + String(BNO_data.roll_rms)
+                + " || AccelH: " + String(BNO_data.accelH_rms) + " || AccelV: " + String(BNO_data.accelV_rms));
+  Serial.print("\n--------CALIBRACION---------");
+  Serial.print("\nSys: " + String(BNO_calibration.sys) + " || Gyro: " + String(BNO_calibration.gyro)
+                + " || Accel: " + String(BNO_calibration.accel) + " || Mag: " + String(BNO_calibration.mag));
+  Serial.print("\n--------SAMPLE RATES--------");
+  Serial.print("\nBNO-055: " + String(settings.bno055_samplerate) + "ms || Modbus TCP: " + String(settings.mb_tcp_samplerate)
+                + "ms" || " MQTT: " + String(settings.mqtt_samplerate) + "ms");
+  Serial.print("\n----------SETTINGS----------");
+  Serial.print("\nIP: " + settings.IP.toString() + " || GW: " + settings.GW.toString() + " || SUB: " + settings.SUB.toString());
+  Serial.print("\n----------------------------");
 }
 
 void callback(char* topic, byte* payload, unsigned int length) 
@@ -217,32 +277,6 @@ void send_data_modbus_tcp()
   send_float(22, BNO_data.accelV_rms);
 }
 
-void get_calibration()
-{
-  bno.getCalibration(&BNO_calibration.sys, &BNO_calibration.gyro, &BNO_calibration.accel, &BNO_calibration.mag);
-}
-void print_terminal()
-{
-  //Serial.print("\n\n\n\n\n\n\n\n");
-  Serial.print("\n------------DATA------------");
-  Serial.print("\n[ACTUAL]  ");
-  Serial.print("Pitch: " + String(BNO_data.pitch_actual) + " || Roll: " + String(BNO_data.roll_actual)
-                + " || AccelH: " + String(BNO_data.accelH_actual) + " || AccelV: " + String(BNO_data.accelV_actual));
-  Serial.print("\n[PICO]    ");
-  Serial.print("Pitch: " + String(BNO_data.pitch_pico) + " || Roll: " + String(BNO_data.roll_pico)
-                + " || AccelH: " + String(BNO_data.accelH_pico) + " || AccelV: " + String(BNO_data.accelV_pico));
-  Serial.print("\n[RMS]     ");
-  Serial.print("Pitch: " + String(BNO_data.pitch_rms) + " || Roll: " + String(BNO_data.roll_rms)
-                + " || AccelH: " + String(BNO_data.accelH_rms) + " || AccelV: " + String(BNO_data.accelV_rms));
-  Serial.print("\n--------CALIBRACION---------");
-  Serial.print("\nSys: " + String(BNO_calibration.sys) + " || Gyro: " + String(BNO_calibration.gyro)
-                + " || Accel: " + String(BNO_calibration.accel) + " || Mag: " + String(BNO_calibration.mag));
-  Serial.print("\n--------SAMPLE RATES--------");
-  Serial.print("\nBNO-055: " + String(settings.bno055_samplerate) + "ms || Modbus TCP: " + String(settings.mb_tcp_samplerate) + "ms");
-  Serial.print("\n----------SETTINGS----------");
-  Serial.print("\n----------------------------");
-}
-
 void notFound(AsyncWebServerRequest *request) 
 {
   request->send(404, "text/plain", "Not found");
@@ -305,6 +339,7 @@ void nvmemory_setup()
 {
   load_default_settings();
 }
+
 void wifi_setup_sta()
 {
   WiFi.mode(WIFI_STA);   
