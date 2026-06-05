@@ -123,14 +123,14 @@ void save_calibration_nvmemory()
 {
   bno.getSensorOffsets(config.calibration);
   preferences.begin("calibration", false);
-  preferences.putBytes("BNO055_CALIBRATION", &config.calibration, sizeof(config.calibration));
+  preferences.putBytes("CALIBRATION", &config.calibration, sizeof(config.calibration));
   preferences.end();
 }
 
 void load_calibration_nvmemory()
 {
   preferences.begin("calibration", true);
-  preferences.getBytes("BNO055_CALIBRATION", &config.calibration, sizeof(config.calibration));
+  preferences.getBytes("CALIBRATION", &config.calibration, sizeof(config.calibration));
   bno.setSensorOffsets(config.calibration);
   preferences.end();
 }
@@ -360,7 +360,7 @@ void wifi_setup_sta()
 void wifi_setup_ap()
 {
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("ESP32||BNO-055", NULL);
+  WiFi.softAP("ESP32||BNO-055", "alumnofosa");
   Serial.println("\nSetting Wifi access point");
   
   WiFi.softAPConfig(settings.IP, settings.GW, settings.SUB);
@@ -422,12 +422,12 @@ void webserver_setup()
     else if (request->hasParam("save"))
     {
       Serial.println("Saving settings to non-volatile memory");
-        save_settings_nvmemory();
+        save_calibration_nvmemory();
     }
      else if (request->hasParam("save"))
     {
       Serial.println("Saving settings to non-volatile memory");
-        load_settings_nvmemory();
+        load_calibration_nvmemory();
     }
     request->send(200, "text/html", HTML_CONTENT);
   });
