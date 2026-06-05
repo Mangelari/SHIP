@@ -49,9 +49,16 @@ const char HTML_CONTENT[] PROGMEM = R"rawliteral(
                   <input type="submit" value="Confirmar" />
             </form>
             <h3>Memoria no volátil ESP32 [WIP]</h3>
-            <button action="/get" type="button">Guardar Configuración</button>
-            <button action="/get" type="button">Cargar Configuración</button>
-            
+            <form action="/get">
+                  <label for="save"></label>
+                  <input type="submit" value="Save: " />
+                  <input type="number" name="save" id="save"/>
+            </form>
+            <form action="/get">
+                  <label for="load"></label>
+                  <input type="submit" value="Load: " />
+                  <input type="number" name="load" id="load"/>
+            </form>
       </body>
 </html>
 )rawliteral";

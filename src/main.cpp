@@ -88,7 +88,7 @@ void load_default_settings()
   settings.GW = IPAddress(192, 168, 1, 222);
   settings.SUB = IPAddress(255, 255, 255, 0);
   settings.mqtt_server = "192.168.1.223";
-  settings.bno055_samplerate = 25;
+  settings.bno055_samplerate = 50;
   settings.mb_tcp_samplerate = 250;
   settings.mqtt_samplerate = 1000;
   settings.mb_tcp_en = true;
@@ -418,6 +418,16 @@ void webserver_setup()
       {
         settings.mqtt_samplerate = (request->getParam("param")->value()).toInt();
       }
+    }
+    else if (request->hasParam("save"))
+    {
+      Serial.println("Saving settings to non-volatile memory");
+        save_settings_nvmemory();
+    }
+     else if (request->hasParam("save"))
+    {
+      Serial.println("Saving settings to non-volatile memory");
+        load_settings_nvmemory();
     }
     request->send(200, "text/html", HTML_CONTENT);
   });
