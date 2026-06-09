@@ -170,8 +170,9 @@ void get_data()
   if(abs(BNO_data.accelV_pico) < accelV_abs_value) BNO_data.accelV_pico = accelV_woffset_value;
   accelV_sum += accelV_abs_value;
   BNO_data.accelV_rms = accelV_sum / counter;
-  BNO_data.msdv = sqrt(pow(BNO_data.accelV_rms, 2) * millis() / 1000);
-  BNO_data.msi = 100 * (1 - exp(-pow(BNO_data.msdv/0.2, 2)));
+  BNO_data.msdv = BNO_data.accelV_rms * sqrt(millis() / 1000);
+  //BNO_data.msdv = sqrt(pow(BNO_data.accelV_rms, 2) * millis() / 1000);
+  BNO_data.msi = BNO_data.msdv / 3;
   
 }
 
